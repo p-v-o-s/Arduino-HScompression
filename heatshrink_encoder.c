@@ -426,8 +426,8 @@ static void do_indexing(heatshrink_encoder *hse) {
 
     const uint16_t input_offset = get_input_offset(hse);
     const uint16_t end = input_offset + hse->input_size;
-
-    for (uint16_t i=0; i<end; i++) {
+    uint16_t i;
+    for (i=0; i<end; i++) {
         uint8_t v = data[i];
         int16_t lv = last[v];
         index[i] = lv;
@@ -556,7 +556,8 @@ static void push_bits(heatshrink_encoder *hse, uint8_t count, uint8_t bits,
     if (count == 8 && hse->bit_index == 0x80) {
         oi->buf[(*oi->output_size)++] = bits;
     } else {
-        for (int i=count - 1; i>=0; i--) {
+        int i;
+        for (i=count - 1; i>=0; i--) {
             bool bit = bits & (1 << i);
             if (bit) { hse->current_byte |= hse->bit_index; }
             if (0) {
