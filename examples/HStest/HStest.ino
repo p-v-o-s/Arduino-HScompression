@@ -34,13 +34,13 @@ static void dump_buf(const char *name, uint8_t *buf, uint16_t count) {
         uint8_t c = (uint8_t)buf[i];
         //printf("%s %d: 0x%02x ('%c')\n", name, i, c, isprint(c) ? c : '.');
         Serial.print(name);
-        Serial.print(" ");
+        Serial.print(F(" "));
         Serial.print(i);
-        Serial.print(": 0x");
+        Serial.print(F(": 0x"));
         Serial.print(c, HEX);
-        Serial.print(" ('");
-        Serial.print(isprint(c) ? c : '.');
-        Serial.print("')\n");
+        Serial.print(F(" ('"));
+        Serial.print(isprint(c) ? c : '.', BYTE);
+        Serial.print(F("')\n"));
     }
 }
 #endif
@@ -53,7 +53,7 @@ static void compress(uint8_t *input,
     heatshrink_encoder_reset(&hse);
     
     #ifdef HEATSHRINK_DEBUG
-    Serial.print("\n^^ COMPRESSING\n");
+    Serial.print(F("\n^^ COMPRESSING\n"));
     dump_buf("input", input, input_size);
     #endif
         
@@ -65,9 +65,9 @@ static void compress(uint8_t *input,
         heatshrink_encoder_sink(&hse, &input[sunk], input_size - sunk, &count);
         sunk += count;
         #ifdef HEATSHRINK_DEBUG
-        Serial.print("^^ sunk ");
+        Serial.print(F("^^ sunk "));
         Serial.print(count);
-        Serial.print("\n");
+        Serial.print(F("\n"));
         #endif
         if (sunk == input_size) {
             //ASSERT_EQ(HSER_FINISH_MORE, heatshrink_encoder_finish(&hse));
@@ -83,15 +83,15 @@ static void compress(uint8_t *input,
             //ASSERT(pres >= 0);
             polled += count;
             #ifdef HEATSHRINK_DEBUG
-            Serial.print("^^ polled ");
+            Serial.print(F("^^ polled "));
             Serial.print(polled);
-            Serial.print("\n");
+            Serial.print(F("\n"));
             #endif
         } while (pres == HSER_POLL_MORE);
         //ASSERT_EQ(HSER_POLL_EMPTY, pres);
         #ifdef HEATSHRINK_DEBUG
         if (polled >= output_size){
-            Serial.print(F("FAIL: compression should never expand that much"));
+            Serial.print(F("FAIL: Exceeded the size of the output buffer!\n"));
         }
         #endif
         if (sunk == input_size) {
@@ -100,29 +100,108 @@ static void compress(uint8_t *input,
         }
     }
     #ifdef HEATSHRINK_DEBUG
-    Serial.print("in: ");
+    Serial.print(F("in: "));
     Serial.print(input_size);
-    Serial.print(" compressed: ");
+    Serial.print(F(" compressed: "));
     Serial.print(polled);
-    Serial.print(" \n");
+    Serial.print(F(" \n"));
     #endif
     //update the output size to the (smaller) compressed size
     output_size = polled;
+    
+    #ifdef HEATSHRINK_DEBUG
+    dump_buf("output", output, output_size);
+    #endif
+}
+
+static void decompress(uint8_t *input,
+                       uint32_t input_size,
+                       uint8_t *output,
+                       uint32_t &output_size
+                      ){
+    heatshrink_decoder_reset(&hsd);
+    #ifdef HEATSHRINK_DEBUG
+    Serial.print(F("\n^^ DECOMPRESSING\n"));
+    dump_buf("input", input, input_size);
+    #endif
+    size_t   count  = 0;
+    uint32_t sunk   = 0;
+    uint32_t polled = 0;
+    while (sunk < input_size) {
+        //ASSERT(heatshrink_decoder_sink(&hsd, &comp[sunk], input_size - sunk, &count) >= 0);
+        heatshrink_decoder_sink(&hsd, &input[sunk], input_size - sunk, &count);
+        sunk += count;
+        #ifdef HEATSHRINK_DEBUG
+        Serial.print(F("^^ sunk "));
+        Serial.print(count);
+        Serial.print(F("\n"));
+        #endif
+        if (sunk == input_size) {
+            //ASSERT_EQ(HSDR_FINISH_MORE, heatshrink_decoder_finish(&hsd));
+            heatshrink_decoder_finish(&hsd);
+        }
+
+        HSD_poll_res pres;
+        do {
+            pres = heatshrink_decoder_poll(&hsd, &output[polled],
+                output_size - polled, &count);
+            //ASSERT(pres >= 0);
+            polled += count;
+            #ifdef HEATSHRINK_DEBUG
+            Serial.print(F("^^ polled "));
+            Serial.print(polled);
+            Serial.print(F("\n"));
+            #endif
+        } while (pres == HSDR_POLL_MORE);
+        //ASSERT_EQ(HSDR_POLL_EMPTY, pres);
+        if (sunk == input_size) {
+            HSD_finish_res fres = heatshrink_decoder_finish(&hsd);
+            //ASSERT_EQ(HSDR_FINISH_DONE, fres);
+        }
+        if (polled > output_size) {
+            #ifdef HEATSHRINK_DEBUG
+            Serial.print(F("FAIL: Exceeded the size of the output buffer!"));
+            #endif
+        }
+    }
+    #ifdef HEATSHRINK_DEBUG
+    Serial.print(F("in: "));
+    Serial.print(input_size);
+    Serial.print(F(" decompressed: "));
+    Serial.print(polled);
+    Serial.print(F(" \n"));
+    #endif
+    //update the output size
+    output_size = polled;
+    
+    #ifdef HEATSHRINK_DEBUG
+    dump_buf("output", output, output_size);
+    #endif
 }
 
 /******************************************************************************/
 
-#define BYTE_BUFFER_SIZE 128
-uint8_t byte_buffer[BYTE_BUFFER_SIZE];
+#define BUFFER_SIZE 128
+uint8_t orig_buffer[BUFFER_SIZE];
+uint8_t comp_buffer[BUFFER_SIZE];
+uint8_t decomp_buffer[BUFFER_SIZE];
 
 void setup() {
   pinMode(arduinoLED, OUTPUT);      // Configure the onboard LED for output
   digitalWrite(arduinoLED, LOW);    // default to LED off
-
   Serial.begin(9600);
+  delay(5000);
+  //write some data into the compression buffer
+  const char test_data[] = "Hello, this is a test AAAAAABBBBBBBBBCCCCCCCCCCDDDDDDDDDDEEEEEEFFFFFF";
+  uint32_t orig_size = strlen(test_data);
+  uint32_t comp_size   = BUFFER_SIZE; //this will get updated by reference
+  uint32_t decomp_size = BUFFER_SIZE; //this will get updated by reference
+  memcpy(orig_buffer, test_data, orig_size);
+  compress(orig_buffer,orig_size,comp_buffer,comp_size);
+  decompress(comp_buffer,comp_size,decomp_buffer,decomp_size);
 }
 
 void loop() {
-  
+  delay(100);
 }
 
