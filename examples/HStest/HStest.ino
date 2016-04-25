@@ -15,7 +15,7 @@
 #error HEATSHRINK_DYNAMIC_ALLOC must be false for static allocation test suite.
 #endif
 
-#define HEATSHRINK_DEBUG
+//#define HEATSHRINK_DEBUG
 
 static heatshrink_encoder hse;
 static heatshrink_decoder hsd;
@@ -181,7 +181,7 @@ static void decompress(uint8_t *input,
 
 /******************************************************************************/
 
-#define BUFFER_SIZE 128
+#define BUFFER_SIZE 256
 uint8_t orig_buffer[BUFFER_SIZE];
 uint8_t comp_buffer[BUFFER_SIZE];
 uint8_t decomp_buffer[BUFFER_SIZE];
@@ -192,13 +192,22 @@ void setup() {
   Serial.begin(9600);
   delay(5000);
   //write some data into the compression buffer
-  const char test_data[] = "Hello, this is a test AAAAAABBBBBBBBBCCCCCCCCCCDDDDDDDDDDEEEEEEFFFFFF";
-  uint32_t orig_size = strlen(test_data);
+  const char test_data[] = "\x01\x00\x00\x02\x00\x00\x03\x00\x00\x03\x00\x00\x04\x00\x00\x04\x00\x00\x03\x00\x00\x01\x00\x00\x04\x00\x00\x08\x00\x00\x01\x00\x00\x08\x00\x00\x07\x00\x00\x05\x00\x00";
+  uint32_t orig_size = 42;//strlen(test_data);
   uint32_t comp_size   = BUFFER_SIZE; //this will get updated by reference
   uint32_t decomp_size = BUFFER_SIZE; //this will get updated by reference
   memcpy(orig_buffer, test_data, orig_size);
+  uint32_t t1 = micros();
   compress(orig_buffer,orig_size,comp_buffer,comp_size);
+  uint32_t t2 = micros();
   decompress(comp_buffer,comp_size,decomp_buffer,decomp_size);
+  uint32_t t3 = micros();
+  Serial.print("Size of orginal data: ");Serial.println(orig_size);
+  Serial.print("Size of compressed data: ");Serial.println(comp_size);
+  float comp_ratio = ((float) orig_size / comp_size);
+  Serial.print("Compression ratio: ");Serial.println(comp_ratio);
+  Serial.print("Time to compress: ");Serial.println((t2-t1)/1e6,6);
+  Serial.print("Time to decompress: ");Serial.println((t3-t2)/1e6,6);
 }
 
 void loop() {
